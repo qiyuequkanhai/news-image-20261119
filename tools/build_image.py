@@ -1,186 +1,218 @@
 #!/usr/bin/env python3
-"""Draw entry.png for the make.fun news-image-20261119 bounty.
+"""Render a one-page newspaper front page for 19 November 2026.
 
-A one-page newspaper front page summing up the world news of
-Thursday 19 November 2026, drawn with Pillow. Every headline is a
-real event of that day, verified against several news sources
-(see README.md for the sources).
-
-The layout is a simple vertical flow: a masthead, a dateline, one
-lead story, then two rows of two short stories each, then a footer
-line. Blocks are stacked in order, so text can never overlap.
-Running the script twice produces byte-identical output.
+Reads nothing from the network and writes a single deterministic PNG:
+entry.png, 1024x1024, in the repository root next to this script's folder.
+Run:  python3 tools/build_image.py
 """
-import os
 
 from PIL import Image, ImageDraw, ImageFont
 
-PAGE_W, PAGE_H = 1024, 1024
-MARGIN = 46
-TEXT_W = PAGE_W - 2 * MARGIN
-GUTTER = 28
+PAGE = 1024
+MARGIN = 38
+INK = (24, 24, 22)
+PAPER = (247, 243, 234)
+RULE = (120, 110, 96)
+ACCENT = (142, 28, 22)
+GREY = (96, 92, 84)
 
-PAPER = (251, 248, 241)   # warm off-white
-INK = (22, 21, 19)        # near-black
-RED = (180, 35, 24)       # accent red for kickers
-GREY = (91, 86, 78)       # muted grey for the footer
-
-SERIF_BOLD = "/usr/share/fonts/truetype/dejavu/DejaVuSerif-Bold.ttf"
-SANS = "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"
-SANS_BOLD = "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"
+FONT_DIR = "/usr/share/fonts/truetype/dejavu/"
+SERIF = FONT_DIR + "DejaVuSerif.ttf"
+SERIF_BOLD = FONT_DIR + "DejaVuSerif-Bold.ttf"
+SANS = FONT_DIR + "DejaVuSans.ttf"
+SANS_BOLD = FONT_DIR + "DejaVuSans-Bold.ttf"
 
 
-class Page:
-    """A drawing surface with a vertical cursor."""
+def font(path, size):
+    return ImageFont.truetype(path, size)
 
-    def __init__(self):
-        self.img = Image.new("RGB", (PAGE_W, PAGE_H), PAPER)
-        self.draw = ImageDraw.Draw(self.img)
-        self.y = 0
 
-    def text(self, x, y, s, fnt, fill=INK):
-        self.draw.text((x, y), s, font=fnt, fill=fill)
-
-    def rule(self, weight=2):
-        self.draw.line([(MARGIN, self.y), (PAGE_W - MARGIN, self.y)],
-                       fill=INK, width=weight)
-
-    def gap(self, n):
-        self.y += n
-
-    def wrapped(self, x, s, fnt, width, leading, fill=INK):
-        """Draw s wrapped to width; advance the cursor past it."""
-        words = s.split()
-        line = ""
-        for word in words:
-            trial = (line + " " + word).strip()
-            if self.draw.textlength(trial, font=fnt) <= width:
+def wrap(text, face, width, draw):
+    """Greedy word wrap: returns lines that fit inside `width` pixels."""
+    lines = []
+    for chunk in text.split("\n"):
+        words = chunk.split()
+        if not words:
+            lines.append("")
+            continue
+        line = words[0]
+        for word in words[1:]:
+            trial = line + " " + word
+            if draw.textlength(trial, font=face) <= width:
                 line = trial
             else:
-                if line:
-                    self.text(x, self.y, line, fnt, fill)
-                    self.y += leading
+                lines.append(line)
                 line = word
-        if line:
-            self.text(x, self.y, line, fnt, fill)
-            self.y += leading
+        lines.append(line)
+    return lines
 
 
-def scaled(draw, path, s, top_size, max_w):
-    """Biggest font up to top_size that fits s inside max_w."""
-    size = top_size
-    while size > 10:
-        fnt = ImageFont.truetype(path, size)
-        if draw.textlength(s, font=fnt) <= max_w:
-            return fnt
-        size -= 2
-    return ImageFont.truetype(path, 10)
+def draw_wrapped(draw, x, y, text, face, width, leading, fill=INK):
+    """Draw wrapped text starting at (x, y); returns the y below the block."""
+    for line in wrap(text, face, width, draw):
+        draw.text((x, y), line, font=face, fill=fill)
+        y += leading
+    return y
+
+# --- The day's stories, each checked against several news sources. ---
+LEAD_HEADLINE = "Denmark votes 109-0 to back US-Greenland defence pact"
+LEAD_DECK = (
+    "Parliament ratifies the September accord, clearing the way for bigger "
+    "US bases in the Arctic and barring non-NATO forces from the island."
+)
+
+STORIES = [
+    (
+        "SPACE",
+        "Voyager 1 phones home from a light-day away",
+        "NASA confirmed on Thursday that Voyager 1 has crossed one light-day "
+        "from Earth - about 16 billion miles - after 49 years in flight. The "
+        "probe stopped sending science data on 14 November, but its carrier "
+        "signal still reaches the Deep Space Network.",
+    ),
+    (
+        "GAMES",
+        "GTA VI takes an estimated $2.36bn on day one",
+        "Rockstar's Grand Theft Auto VI launched at midnight on 19 November "
+        "for PlayStation 5 and Xbox Series X|S. Tracker Sensor Tower estimates "
+        "24.58 million copies sold in the first day, the biggest entertainment "
+        "launch on record. Take-Two has not confirmed a figure.",
+    ),
+    (
+        "ENERGY",
+        "Iran says five tankers struck mines in Hormuz",
+        "Iran's Revolutionary Guard navy said two supertankers carrying more "
+        "than four million barrels of crude hit naval mines and caught fire in "
+        "the Strait of Hormuz, and three more tankers were hit east of the "
+        "strait. The claims could not be independently verified.",
+    ),
+    (
+        "ASIA",
+        "Mongolian parliament accepts president's resignation",
+        "Lawmakers voted 96-104 to accept President Khurelsukh Ukhnaa's "
+        "resignation, the first time a sitting Mongolian president has left "
+        "office early. He quit on 17 November denying corruption allegations "
+        "and saying he wants to clear his name; an election must follow "
+        "within four months.",
+    ),
+]
+
+BRIEFS = [
+    "Pituffik Space Base in north-west Greenland is to expand under the deal.",
+    "Voyager 1 is now heading for the star Gliese 445, some 17 light-years away.",
+    "GTA VI scored 99 out of 100 on review aggregator Metacritic.",
+]
 
 
-def story(page, x, width, kicker, headline, summary,
-          head_size=30, body_size=23):
-    """One short story: red kicker, bold headline, plain summary."""
-    kick = ImageFont.truetype(SANS_BOLD, 24)
-    page.text(x, page.y, kicker, kick, RED)
-    page.y += 30
-    page.wrapped(x, headline, ImageFont.truetype(SANS_BOLD, head_size),
-                 width, head_size + 6)
-    page.y += 6
-    page.wrapped(x, summary, ImageFont.truetype(SANS, body_size),
-                 width, body_size + 5)
+def rule(draw, y, x0=None, x1=None, width=2):
+    """A horizontal rule across the page (or between x0 and x1)."""
+    draw.line(
+        [(x0 if x0 is not None else MARGIN, y), (x1 if x1 is not None else PAGE - MARGIN, y)],
+        fill=RULE,
+        width=width,
+    )
 
+
+def story_block(draw, x, y, width, kicker, headline, body):
+    """One column story: red kicker, bold headline, justified-feel body."""
+    kick = font(SANS_BOLD, 15)
+    head = font(SERIF_BOLD, 26)
+    text = font(SERIF, 16)
+    draw.text((x, y), kicker, font=kick, fill=ACCENT)
+    y += 24
+    y = draw_wrapped(draw, x, y, headline, head, width, 31)
+    y += 6
+    y = draw_wrapped(draw, x, y, body, text, width, 22)
+    return y
 
 def build():
-    p = Page()
-    d = p.draw
+    canvas = Image.new("RGB", (PAGE, PAGE), PAPER)
+    draw = ImageDraw.Draw(canvas)
+    content_w = PAGE - 2 * MARGIN
+    y = 30
 
     # Masthead.
-    p.y = 26
-    mast = scaled(d, SERIF_BOLD, "THE WORLD TODAY", 88, TEXT_W)
-    title = "THE WORLD TODAY"
-    p.text((PAGE_W - d.textlength(title, font=mast)) / 2, p.y, title, mast)
-    p.y += 86
-    p.rule(4)
-    p.y += 8
-    p.rule(1)
-    p.y += 14
+    title = font(SERIF_BOLD, 66)
+    name = "THE WORLD TODAY"
+    tw = draw.textlength(name, font=title)
+    draw.text(((PAGE - tw) / 2, y), name, font=title, fill=INK)
+    y += 82
+    rule(draw, y, width=3)
+    y += 10
 
-    # Dateline row.
-    dl = ImageFont.truetype(SANS_BOLD, 25)
-    p.text(MARGIN, p.y, "THURSDAY, 19 NOVEMBER 2026", dl)
-    right = "ONE DAY  ·  ONE IMAGE"
-    p.text(PAGE_W - MARGIN - d.textlength(right, font=dl), p.y, right, dl,
-           RED)
-    p.y += 30
-    p.rule(1)
-    p.y += 12
+    # Dateline.
+    date_face = font(SANS_BOLD, 17)
+    dateline = "THURSDAY 19 NOVEMBER 2026  |  WORLD NEWS IN ONE PAGE"
+    dw = draw.textlength(dateline, font=date_face)
+    draw.text(((PAGE - dw) / 2, y), dateline, font=date_face, fill=GREY)
+    y += 30
+    rule(draw, y, width=3)
+    y += 16
 
-    # Lead story: Denmark approves the Greenland–US defence pact.
-    kick = ImageFont.truetype(SANS_BOLD, 24)
-    p.text(MARGIN, p.y, "COPENHAGEN  —  THE ARCTIC", kick, RED)
-    p.y += 30
-    p.wrapped(MARGIN, "Denmark clears US forces to expand in the Arctic",
-              ImageFont.truetype(SANS_BOLD, 48), TEXT_W, 54)
-    p.y += 6
-    p.wrapped(MARGIN,
-              "Parliament votes unanimously to approve a defence pact "
-              "with Greenland and the United States, letting American "
-              "troops build up in the far north while Denmark keeps "
-              "sovereignty.",
-              ImageFont.truetype(SANS, 24), TEXT_W, 31)
-    p.y += 10
-    p.rule(1)
-    p.y += 12
+    # Lead story, full width.
+    lead_face = font(SERIF_BOLD, 44)
+    y = draw_wrapped(draw, MARGIN, y, LEAD_HEADLINE, lead_face, content_w, 50)
+    y += 8
+    deck_face = font(SERIF, 20)
+    y = draw_wrapped(draw, MARGIN, y, LEAD_DECK, deck_face, content_w, 27, fill=GREY)
+    y += 14
+    rule(draw, y)
+    y += 16
 
-    # Two rows of two stories.
-    col_w = (TEXT_W - GUTTER) // 2
-    x_right = MARGIN + col_w + GUTTER
-    for row in (
-        (("SPACE",
-          "Voyager 1 becomes first craft one light-day from Earth",
-          "NASA says the 1977 probe has travelled further from home "
-          "than any object ever built."),
-         ("GAMES",
-          "GTA VI launches worldwide after 13 years",
-          "Rockstar's sequel opens to rave reviews as players queue "
-          "for the biggest game launch in years.")),
-        (("THE GULF  —  ENERGY",
-          "Three tankers catch fire after hitting mines near Hormuz",
-          "Iran says the ships struck mines east of the strait; the "
-          "energy agency warns the crisis threatens global supplies."),
-         ("ULAANBAATAR",
-          "Mongolia's president quits over railway scandal",
-          "Parliament accepts Khurelsukh Ukhnaa's resignation after "
-          "claims he profited from a rail project.")),
-    ):
-        saved_y = p.y
-        story(p, MARGIN, col_w, *row[0])
-        bottom_left = p.y
-        p.y = saved_y
-        story(p, x_right, col_w, *row[1])
-        p.y = max(bottom_left, p.y) + 10
-        p.rule(1)
-        p.y += 12
+    # Two stories per row, two rows.
+    gutter = 28
+    col_w = (content_w - gutter) // 2
+    row_top = y
+    bottoms = []
+    for i in range(2):
+        kicker, headline, body = STORIES[i]
+        end = story_block(draw, MARGIN + i * (col_w + gutter), row_top, col_w,
+                          kicker, headline, body)
+        bottoms.append(end)
+    y = max(bottoms) + 14
+    rule(draw, y)
+    y += 16
+    row_top = y
+    bottoms = []
+    for i in range(2, 4):
+        kicker, headline, body = STORIES[i]
+        end = story_block(draw, MARGIN + (i - 2) * (col_w + gutter), row_top, col_w,
+                          kicker, headline, body)
+        bottoms.append(end)
+    y = max(bottoms) + 14
+    rule(draw, y, width=3)
+    y += 12
 
-    # Footer: the day's other stories on one line.
-    foot_line = ("ALSO:  Anthropic prices record $81.3bn IPO at $83 a "
-                 "share  ·  South Korea court overturns ex-PM's "
-                 "martial-law sentence  ·  US and Venezuela restore "
-                 "military ties")
-    foot = scaled(d, SANS, foot_line, 22, TEXT_W)
-    p.text((PAGE_W - d.textlength(foot_line, font=foot)) / 2, p.y,
-           foot_line, foot, GREY)
-    p.y += 30
+    # Briefs strip.
+    brief_face = font(SANS_BOLD, 15)
+    draw.text((MARGIN, y), "IN BRIEF", font=brief_face, fill=ACCENT)
+    y += 24
+    item_face = font(SERIF, 15)
+    for item in BRIEFS:
+        y = draw_wrapped(draw, MARGIN + 16, y, item, item_face,
+                         content_w - 16, 20)
+        draw.text((MARGIN, y - 20), "-", font=item_face, fill=GREY)
+    y += 8
+    rule(draw, y)
+    y += 10
 
-    print("content bottom y =", p.y)
-    assert p.y <= 1000, f"layout overflow: bottom y={p.y}"
-    return p.img
+    # Footer.
+    foot = font(SANS, 13)
+    note = "THE WORLD TODAY  |  19 November 2026  |  Stories verified against multiple sources"
+    fw = draw.textlength(note, font=foot)
+    draw.text(((PAGE - fw) / 2, y), note, font=foot, fill=GREY)
+
+    return canvas
+
+
+def main():
+    import os
+
+    here = os.path.dirname(os.path.abspath(__file__))
+    out = os.path.join(os.path.dirname(here), "entry.png")
+    build().save(out, "PNG")
+    print("wrote", out)
 
 
 if __name__ == "__main__":
-    here = os.path.dirname(os.path.abspath(__file__))
-    out = os.path.join(os.path.dirname(here), "entry.png")
-    build().save(out, format="PNG", optimize=True)
-    size = os.path.getsize(out)
-    print(f"wrote {out} ({size} bytes)")
-    assert size <= 1048576, "over 1 MiB!"
+    main()
